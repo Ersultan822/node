@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="kk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Қонақүйді брондау жүйесі</title>
+<style>
+  :root { --bg:#f5f6fa; --card:#fff; --text:#1f2430; --muted:#6b7280; --accent:#2f5bea; --ok:#16a34a; --bad:#dc2626; --warn:#d97706; --line:#e5e7eb; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--text); }
+  header { background:var(--accent); color:#fff; padding:16px 24px; }
+  header h1 { margin:0; font-size:20px; }
+  nav { display:flex; gap:8px; padding:12px 24px; background:var(--card); border-bottom:1px solid var(--line); }
+  nav button { border:0; background:none; padding:8px 14px; border-radius:8px; cursor:pointer; font-size:14px; color:var(--muted); }
+  nav button.active { background:var(--accent); color:#fff; }
+  main { max-width:1000px; margin:20px auto; padding:0 16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; margin-bottom:16px; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; align-items:end; }
+  label { display:flex; flex-direction:column; font-size:12px; color:var(--muted); gap:4px; }
+  input, select { padding:8px 10px; border:1px solid var(--line); border-radius:8px; font-size:14px; }
+  button.btn { background:var(--accent); color:#fff; border:0; padding:9px 16px; border-radius:8px; cursor:pointer; font-size:14px; }
+  button.btn.sec { background:#eef1fb; color:var(--accent); }
+  button.btn.danger { background:#fdecec; color:var(--bad); }
+  button.btn.small { padding:5px 10px; font-size:12px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th, td { text-align:left; padding:8px; border-bottom:1px solid var(--line); vertical-align:middle; }
+  th { color:var(--muted); font-weight:500; font-size:12px; }
+  .badge { padding:2px 8px; border-radius:99px; font-size:12px; background:#eef1fb; color:var(--accent); }
+  .paid, .confirmed { background:#e7f7ec; color:var(--ok); }
+  .cancelled, .failed, .refunded { background:#fdecec; color:var(--bad); }
+  .pending, .unpaid { background:#fff4e0; color:var(--warn); }
+  .room { display:flex; justify-content:space-between; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--line); }
+  .room:last-child { border-bottom:0; }
+  .muted { color:var(--muted); font-size:13px; }
+  .hidden { display:none; }
+  #toast { position:fixed; bottom:20px; right:20px; background:#1f2430; color:#fff; padding:10px 16px; border-radius:8px; opacity:0; transition:.2s; max-width:320px; }
+  #toast.show { opacity:1; }
+  dialog { border:0; border-radius:12px; padding:20px; width:min(380px, 92vw); }
+  dialog::backdrop { background:rgba(0,0,0,.4); }
+  dialog form { display:flex; flex-direction:column; gap:10px; }
+</style>
+</head>
+<body>
+<header><h1>🏨 Қонақүйді брондау жүйесі</h1></header>
+<nav>
+  <button data-tab="search" class="active">Бос бөлмелер</button>
+  <button data-tab="bookings">Броньдар</button>
+  <button data-tab="payments">Төлемдер</button>
+</nav>
+
+<main>
+  <!-- Іздеу -->
+  <section id="tab-search">
+    <div class="card">
+      <div class="row">
+        <label>Қала <input id="s-city" placeholder="Almaty"></label>
+        <label>Келу күні <input id="s-in" type="date"></label>
+        <label>Кету күні <input id="s-out" type="date"></label>
+        <label>Қонақ саны <input id="s-guests" type="number" min="1" value="2" style="width:90px"></label>
+        <label>Түрі
+          <select id="s-type"><option value="">Барлығы</option><option>single</option><option>double</option><option>family</option><option>suite</option></select>
+        </label>
+        <label>Макс. баға <input id="s-price" type="number" min="0" placeholder="₸" style="width:110px"></label>
+        <button class="btn" id="s-btn">Іздеу</button>
+      </div>
+    </div>
+    <div class="card" id="s-results"><span class="muted">Күндерді таңдап, «Іздеу» түймесін басыңыз.</span></div>
+  </section>
+
+  <!-- Броньдар -->
+  <section id="tab-bookings" class="hidden">
+    <div class="card">
+      <div class="row">
+        <label>Статус
+          <select id="b-status"><option value="">Барлығы</option><option>pending</option><option>confirmed</option><option>cancelled</option><option>completed</option></select>
+        </label>
+        <label>Төлем
+          <select id="b-pay"><option value="">Барлығы</option><option>unpaid</option><option>pending</option><option>paid</option><option>failed</option><option>refunded</option></select>
+        </label>
+        <button class="btn sec" id="b-btn">Жаңарту</button>
+      </div>
+    </div>
+    <div class="card"><div style="overflow-x:auto"><table id="b-table"></table></div></div>
+  </section>
+
+  <!-- Төлемдер -->
+  <section id="tab-payments" class="hidden">
+    <div class="card"><div style="overflow-x:auto"><table id="p-table"></table></div></div>
+  </section>
+</main>
+
+<dialog id="dlg">
+  <form method="dialog" id="dlg-form">
+    <h3 style="margin:0" id="dlg-title">Брондау</h3>
+    <div class="muted" id="dlg-info"></div>
+    <label>Аты-жөні <input id="c-name" required></label>
+    <label>Email <input id="c-email" type="email" required></label>
+    <label>Телефон <input id="c-phone"></label>
+    <div class="row" style="justify-content:flex-end">
+      <button type="button" class="btn sec" id="dlg-cancel">Болдырмау</button>
+      <button class="btn" id="dlg-ok">Брондау</button>
+    </div>
+  </form>
+</dialog>
+<div id="toast"></div>
+
+<script>
+const API = '/api';
+const $ = (id) => document.getElementById(id);
+const fmtDate = (d) => new Date(d).toISOString().slice(0, 10);
+const money = (n) => Number(n).toLocaleString('ru-RU') + ' ₸';
+
+async function api(path, method = 'GET', body) {
+  const res = await fetch(API + path, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error([json.message, ...(json.details || [])].join(': '));
+  return json;
+}
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+const safe = (fn) => async (...a) => { try { await fn(...a); } catch (e) { toast('⚠ ' + e.message); } };
+
+// Табтар
+document.querySelectorAll('nav button').forEach((b) => b.addEventListener('click', () => {
+  document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('active', x === b));
+  ['search', 'bookings', 'payments'].forEach((t) => $('tab-' + t).classList.toggle('hidden', t !== b.dataset.tab));
+  if (b.dataset.tab === 'bookings') loadBookings();
+  if (b.dataset.tab === 'payments') loadPayments();
+}));
+
+// Әдепкі күндер: ертең → 3 күннен кейін
+const d = (n) => new Date(Date.now() + n * 864e5).toISOString().slice(0, 10);
+$('s-in').value = d(1); $('s-out').value = d(3);
+
+// ---------- Іздеу ----------
+let lastSearch = {};
+$('s-btn').onclick = safe(async () => {
+  const q = new URLSearchParams({ checkIn: $('s-in').value, checkOut: $('s-out').value });
+  if ($('s-city').value) q.set('city', $('s-city').value);
+  if ($('s-guests').value) q.set('guests', $('s-guests').value);
+  if ($('s-type').value) q.set('type', $('s-type').value);
+  if ($('s-price').value) q.set('maxPrice', $('s-price').value);
+  lastSearch = { checkIn: $('s-in').value, checkOut: $('s-out').value, guests: Number($('s-guests').value) || 1 };
+  const { data } = await api('/rooms/available?' + q);
+  const nights = Math.ceil((new Date(lastSearch.checkOut) - new Date(lastSearch.checkIn)) / 864e5);
+  $('s-results').innerHTML = data.length
+    ? data.map((r) => `
+      <div class="room">
+        <div>
+          <b>${r.hotel.name}</b> · ${r.hotel.city} · №${r.number}
+          <div class="muted">${r.type} · ${r.capacity} орын · ${(r.amenities || []).join(', ')}</div>
+        </div>
+        <div style="text-align:right">
+          <div><b>${money(r.pricePerNight)}</b> / түн</div>
+          <div class="muted">Барлығы: ${money(r.pricePerNight * nights)} (${nights} түн)</div>
+          <button class="btn small" onclick="openBook('${r._id}','${r.hotel.name} №${r.number}')">Брондау</button>
+        </div>
+      </div>`).join('')
+    : '<span class="muted">Бос бөлме табылмады.</span>';
+});
+
+// ---------- Брондау ----------
+let roomToBook = null;
+window.openBook = (id, label) => { roomToBook = id; $('dlg-info').textContent = `${label}: ${lastSearch.checkIn} → ${lastSearch.checkOut}`; $('dlg').showModal(); };
+$('dlg-cancel').onclick = () => $('dlg').close();
+$('dlg-form').onsubmit = safe(async (e) => {
+  e.preventDefault();
+  const email = $('c-email').value.trim().toLowerCase();
+  let { data: found } = await api('/customers?email=' + encodeURIComponent(email));
+  let customer = found[0];
+  if (!customer) customer = (await api('/customers', 'POST', { fullName: $('c-name').value, email, phone: $('c-phone').value })).data;
+  await api('/bookings', 'POST', { customer: customer._id, room: roomToBook, ...lastSearch });
+  $('dlg').close();
+  toast('✅ Бронь жасалды');
+  $('s-btn').click();
+});
+
+// ---------- Броньдар ----------
+async function loadBookings() {
+  const q = new URLSearchParams();
+  if ($('b-status').value) q.set('status', $('b-status').value);
+  if ($('b-pay').value) q.set('paymentStatus', $('b-pay').value);
+  const { data } = await api('/bookings?' + q);
+  $('b-table').innerHTML = `<tr><th>Клиент</th><th>Қонақүй / бөлме</th><th>Күндер</th><th>Сома</th><th>Статус</th><th>Төлем</th><th></th></tr>` +
+    data.map((b) => `<tr>
+      <td>${b.customer?.fullName || '—'}<div class="muted">${b.customer?.email || ''}</div></td>
+      <td>${b.hotel?.name} №${b.room?.number}</td>
+      <td>${fmtDate(b.checkIn)} → ${fmtDate(b.checkOut)}<div class="muted">${b.nights} түн</div></td>
+      <td>${money(b.totalPrice)}</td>
+      <td><span class="badge ${b.status}">${b.status}</span></td>
+      <td><span class="badge ${b.paymentStatus}">${b.paymentStatus}</span></td>
+      <td style="white-space:nowrap">
+        ${b.status !== 'cancelled' && b.paymentStatus !== 'paid' ? `<button class="btn small" onclick="payBooking('${b._id}')">Төлеу</button>` : ''}
+        ${!['cancelled', 'completed'].includes(b.status) ? `<button class="btn small sec" onclick="editBooking('${b._id}','${fmtDate(b.checkIn)}','${fmtDate(b.checkOut)}')">Өзгерту</button>
+        <button class="btn small danger" onclick="cancelBooking('${b._id}')">Бас тарту</button>` : ''}
+        <button class="btn small danger" onclick="deleteBooking('${b._id}')">Жою</button>
+      </td></tr>`).join('');
+}
+$('b-btn').onclick = safe(loadBookings);
+$('b-status').onchange = $('b-pay').onchange = safe(loadBookings);
+
+window.payBooking = safe(async (id) => {
+  const method = prompt('Төлем әдісі: card / cash / transfer', 'card');
+  if (!method) return;
+  await api('/payments', 'POST', { booking: id, method, status: 'paid' });
+  toast('💳 Төлем қабылданды'); loadBookings();
+});
+window.editBooking = safe(async (id, inD, outD) => {
+  const checkIn = prompt('Жаңа келу күні (YYYY-MM-DD)', inD); if (!checkIn) return;
+  const checkOut = prompt('Жаңа кету күні (YYYY-MM-DD)', outD); if (!checkOut) return;
+  await api('/bookings/' + id, 'PUT', { checkIn, checkOut });
+  toast('✏️ Бронь өзгертілді'); loadBookings();
+});
+window.cancelBooking = safe(async (id) => {
+  if (!confirm('Броньнан бас тарту керек пе?')) return;
+  await api(`/bookings/${id}/cancel`, 'PATCH'); toast('Бронь бас тартылды'); loadBookings();
+});
+window.deleteBooking = safe(async (id) => {
+  if (!confirm('Броньды толық жою керек пе?')) return;
+  await api('/bookings/' + id, 'DELETE'); toast('🗑 Бронь жойылды'); loadBookings();
+});
+
+// ---------- Төлемдер ----------
+async function loadPayments() {
+  const { data } = await api('/payments');
+  $('p-table').innerHTML = `<tr><th>Бронь</th><th>Сома</th><th>Әдіс</th><th>Статус</th><th>Күні</th><th>Статусты өзгерту</th></tr>` +
+    data.map((p) => `<tr>
+      <td>${p.booking ? fmtDate(p.booking.checkIn) + ' → ' + fmtDate(p.booking.checkOut) : '—'}</td>
+      <td>${money(p.amount)}</td><td>${p.method}</td>
+      <td><span class="badge ${p.status}">${p.status}</span></td>
+      <td>${p.paidAt ? fmtDate(p.paidAt) : '—'}</td>
+      <td><select onchange="setPayStatus('${p._id}', this.value)">
+        ${['pending', 'paid', 'failed', 'refunded'].map((s) => `<option ${s === p.status ? 'selected' : ''}>${s}</option>`).join('')}
+      </select></td></tr>`).join('');
+}
+window.setPayStatus = safe(async (id, status) => {
+  await api(`/payments/${id}/status`, 'PATCH', { status }); toast('Төлем статусы жаңартылды'); loadPayments();
+});
+</script>
+</body>
+</html>
